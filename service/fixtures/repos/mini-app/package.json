@@ -1,0 +1,14 @@
+{
+  "name": "mini-app",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Small order service used as an analysis fixture",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.0",
+    "pg": "^8.11.0"
+  }
+}

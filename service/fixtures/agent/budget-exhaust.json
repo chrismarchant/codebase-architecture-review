@@ -1,0 +1,28 @@
+{
+  "description": "Reads every file twice before writing anything; with a small maxReadBytesTotal the run ends as budget_exhausted.",
+  "steps": [
+    {"tool":"perspective_started","args":{"name":"overall-architecture"}},
+    {"read":"package.json"},
+    {"read":"README.md"},
+    {"read":"src/config.ts"},
+    {"read":"src/server.ts"},
+    {"read":"src/routes/orders.ts"},
+    {"read":"src/services/order-service.ts"},
+    {"read":"src/services/pricing.ts"},
+    {"read":"src/db/client.ts"},
+    {"read":"src/db/queries.ts"},
+    {"read":"src/integrations/payment-gateway.ts"},
+    {"read":"package.json"},
+    {"read":"README.md"},
+    {"read":"src/config.ts"},
+    {"read":"src/server.ts"},
+    {"read":"src/routes/orders.ts"},
+    {"read":"src/services/order-service.ts"},
+    {"read":"src/services/pricing.ts"},
+    {"read":"src/db/client.ts"},
+    {"read":"src/db/queries.ts"},
+    {"read":"src/integrations/payment-gateway.ts"},
+    {"tool":"omm_write","args":{"path":"overall-architecture","field":"description","content":"never reached with a small read budget"}},
+    {"tool":"perspective_done","args":{"name":"overall-architecture"}}
+  ]
+}

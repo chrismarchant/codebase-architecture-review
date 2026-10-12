@@ -1,0 +1,61 @@
+name: Service CI
+
+on:
+  push:
+    branches: ['**']
+    paths-ignore: ['README*.md', 'docs/**/*.png', 'docs/**/*.gif', 'docs/**/*.jpg']
+  pull_request:
+
+jobs:
+  upstream:
+    name: Upstream build and tests (unchanged commands)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - run: npm run check-version-sync
+
+  service:
+    name: Service typecheck, unit and parity tests
+    runs-on: ubuntu-latest
+    needs: upstream
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci && npm run build
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.0
+      - name: Install service dependencies
+        working-directory: service
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        working-directory: service
+        run: pnpm typecheck
+      - name: Generated schemas are current
+        working-directory: service
+        run: pnpm schemas && git diff --exit-code -- packages/contracts/schemas
+      - name: Unit tests
+        working-directory: service
+        run: pnpm vitest run --project unit
+      - name: Parity tests
+        working-directory: service
+        run: pnpm vitest run --project parity
+
+  images:
+    name: Deployment images build
+    runs-on: ubuntu-latest
+    needs: service
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f service/apps/api/Dockerfile -t archreview-api .
+      - run: docker build -f service/apps/runner/Dockerfile -t archreview-runner .

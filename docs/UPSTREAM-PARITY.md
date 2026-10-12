@@ -27,7 +27,7 @@ Upstream is MIT licensed: `LICENSE`, "Copyright (c) 2025 oh-my-mermaid". The fil
 | `npm test` | 8 files, 37 tests passed (vitest 4.1.0) |
 | `node scripts/check-version-sync.js` | ok (0.2.0 in all three manifests) |
 
-No upstream failures were observed. The following upstream behaviours are documented, not fixed, because they are upstream's to decide (recorded from the inventory): `omm login` help text says "omm.dev" while the code targets `ohmymermaid.com`; `omm org members` prints a URL rather than opening a browser; `omm config` is absent from `omm help`; `commandClassField` is imported but never dispatched; `PLAN.md` describes an `omm serve` command and mermaid.js usage that the shipped code does not have.
+No upstream failures were observed. The following upstream behaviours are documented, not fixed, because they are upstream's to decide (recorded from the inventory): `omm login` help text says "omm.dev" while the code targets `ohmymermaid.com`; `omm org members` prints a URL rather than opening a browser; `omm config` is absent from `omm help`; `commandClassField` is imported but never dispatched; `PLAN.md` describes an `omm serve` command and mermaid.js usage that the shipped code does not have; `omm diff` (lightweight `parseMermaid`) records the label token instead of the target node id for edges written as `a -->|"label"| b[...]` (observed by `service/test/parity/cli.test.ts`).
 
 ## 4. Public repository functionality versus externally hosted functionality
 

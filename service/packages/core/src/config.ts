@@ -97,6 +97,9 @@ export const RunnerEnv = CommonEnv.extend({
   ANTHROPIC_API_KEY: z.string().optional(),
   ANTHROPIC_BASE_URL: z.string().optional(),
   MOCK_AGENT_SCRIPT: z.string().optional(), // path to a fixture script when ANALYSIS_RUNTIME=mock
+  // Live (paid) provider calls are opt-in only (SS00 §13 A19): both must be set for test:live.
+  ANALYSIS_LIVE: bool,
+  ANALYSIS_SPEND_CEILING_USD: num(0),
 });
 export type RunnerEnv = z.infer<typeof RunnerEnv>;
 

@@ -1,5 +1,5 @@
 /**
- * Job store interface (SS00 §3, §7). Implemented over the Db abstraction in ./pg-store.ts.
+ * Job store interface (SS00 §3, §7). Implemented over the Db abstraction in ./pg-job-store.ts.
  * All worker-side mutations carry a fence token and MUST return `false` when the
  * caller has been fenced out (zero rows updated).
  */

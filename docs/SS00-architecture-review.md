@@ -226,14 +226,14 @@ All responses are JSON unless stated. Errors use `{ error: { code, message, deta
 | `GET` | `/v1/scans/:id` | Status, progress, budgets, usage, failure, artifact index when published. |
 | `GET` | `/v1/scans/:id/events` | SSE stream of `job_events`. |
 | `POST` | `/v1/scans/:id/cancel` | Request cancellation. 202. |
-| `GET` | `/v1/scans/:id/artifacts` | Manifest-derived index: `[{ name, path, bytes, sha256, schema, href }]`. |
+| `GET` | `/v1/scans/:id/artifacts` | Manifest-derived index: `[{ path, bytes, sha256, schema?, href }]` (contract `ArtifactIndexEntry`). |
 | `GET` | `/v1/scans/:id/artifacts/:path*` | Stream one artifact (validated against the manifest; no path traversal possible because paths come from the manifest, never the request). `bundle.tar.gz` is the downloadable bundle. |
 | `GET` | `/v1/scans/:id/architecture` | `architecture.json`. |
 | `GET` | `/v1/scans/:id/studio-export` | `studio-export.json` (Stage E). |
 | `GET` | `/v1/scans/:id/viewer/` | Upstream viewer HTML with hooks injected. |
 | `GET` | `/v1/scans/:id/viewer-api/api/*` | Upstream viewer API shape backed by the published `.omm` tree (classes, class, refs, nodes, node). `GET …/viewer-api/events` returns a no-op SSE stream (published trees never change). |
 | `POST` | `/v1/comparisons` | `{ baseScanId, headScanId }` → 201 `{ comparison }`. Both scans must be owned by the caller and published. |
-| `GET` | `/v1/comparisons/:id` | Comparison result (`archreview.comparison/1.0`). |
+| `GET` | `/v1/comparisons/:id` | Comparison record (`ComparisonRecord`); `GET /v1/comparisons/:id/result` returns the `archreview.comparison/1.0` document. |
 | `GET` | `/health` | Liveness (process up). |
 | `GET` | `/ready` | Readiness (DB reachable, bucket reachable, migrations current). |
 | `POST` | `/internal/wake` (runner) | HMAC-authenticated; body `{ scanId?, nonce, ts }`; 202 always after auth. |

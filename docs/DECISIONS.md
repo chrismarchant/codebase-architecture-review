@@ -132,7 +132,7 @@ The model is selected by `ANALYSIS_MODEL` (default `claude-sonnet-5-5`); effort 
 
 **Decision.** Retrieval resolves the requested ref to a full 40-character SHA via the provider API (GitHub) or `git ls-remote`, then fetches that exact commit with `git -c core.hooksPath=/dev/null -c core.symlinks=false -c core.fsmonitor=false -c core.sshCommand=false clone --filter=blob:none --no-checkout` into a scratch bare repository and materialises the tree with `git archive <sha> | tar -x` into `snapshot/`, skipping symlinks, hard links, device nodes, absolute or `..` paths, and files above the byte budget. Submodules are not fetched. The snapshot is made read-only (`chmod -R a-w`) before analysis. Credentials are passed to `git` through `GIT_ASKPASS`/`http.extraheader` in the retrieval step's environment only and are wiped after the step.
 
-**Consequences.** Analysis sees exactly the committed tree of one SHA. Repositories relying on LFS objects show their pointer files (documented limitation). The resolved SHA is recorded in the manifest and compared against any client-supplied SHA.
+**Consequences.** Analysis sees exactly the committed tree of one SHA. Git LFS pointer files are not materialised; they are recorded in the inventory as `lfs_pointer` exclusions so coverage shows them (documented limitation). Files hidden by committed `export-ignore` attributes are omitted by `git archive` (documented limitation). The resolved SHA is recorded in the manifest and compared against any client-supplied SHA.
 
 ---
 

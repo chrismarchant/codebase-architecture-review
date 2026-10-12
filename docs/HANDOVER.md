@@ -1,6 +1,6 @@
 # Handover — how to resume this build
 
-Last updated: Stage B complete, Stage C wave 1 in progress (2026-10-12).
+Last updated: Stage C wave 1 merged (C1, C2, C3, H1); wave 2 (C4, C5) in progress (2026-10-12).
 
 ## Where things are
 
@@ -26,7 +26,7 @@ Sub-agent models `sonnet` → `claude-sonnet-5-5` and `haiku` → `claude-haiku-
 | --- | --- | --- |
 | A — baseline and architecture | done | committed `f657fa1` |
 | B — contracts and scaffolding | done | committed `1174715`, `3dc76db`; pnpm workspace |
-| C — delegated implementation | wave 1 running: C1, C2, C3 (Sonnet), H1 (Haiku) | wave 2: C4, C5; wave 3: C6, C7 |
+| C — delegated implementation | wave 1 merged (`68096d3`, `157f780`, `69266d5`, `a34270d`); wave 2 running: C4, C5 | wave 3: C6, C7 |
 | D — Railway runtime pass | pending | Fable design + Sonnet implementation; uses `.railway/railway.ts` (ADR-007) |
 | E — Security Studio adapter | pending | brief C7 |
 | F — verification, Codex package | pending | `docs/CODEX-REVIEW-PACKAGE.md`, `docs/TEST-EVIDENCE.md` |

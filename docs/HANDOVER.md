@@ -39,6 +39,11 @@ Sub-agent models `sonnet` → `claude-sonnet-5-5` and `haiku` → `claude-haiku-
 4. Stage D needs the facts in SS00 §10 (fetched from Railway docs on 2026-10-12); re-fetch before relying on them.
 5. Never deploy, merge, modify Security Studio, or run paid analysis without a spend ceiling under this directive.
 
+## Operational notes
+
+- Sub-agent sessions share a Sonnet usage limit; the first C4/C5 launch (12:5x UTC) was terminated by HTTP 429 "session limit" before doing any work and relaunched at 13:15 UTC after the reset. If a task fails this way, relaunch it with the same prompt; nothing partial is written.
+- The C3 follow-up (`749bd6a`) added `PreToolUse` hooks so the snapshot path policy and read accounting run on every built-in tool call, not only on calls that reach the permission prompt.
+
 ## Environment facts
 
 - Node 22.22, npm 10.9.4 (root project), pnpm 10.28 (service), git available, Docker CLI present but **no daemon** (image builds cannot be verified here; record that honestly).

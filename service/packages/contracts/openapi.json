@@ -1,0 +1,661 @@
+{
+  "openapi": "3.1.0",
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "info": {
+    "title": "Architecture Review Service HTTP API",
+    "version": "1.0.0",
+    "summary": "HTTP contract v1 (SS00 section 6)",
+    "description": "Proposed service endpoints. None of them exists upstream. Schemas are referenced from the generated JSON Schemas in ./schemas/ (zod contracts in @archreview/contracts are the source of truth). Where SS00 section 6 does not define a response shape or status code, the operation description says so; those points are not decided here.\n\nThe API service serves all `/v1` routes, the web UI and `/health` and `/ready`. The runner service serves `/internal/wake`, `/health` and `/ready` on its own origin; `/health` and `/ready` are documented once and the runner adds `activeJobs` to them."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Same origin as the service serving the request (relative URLs)."
+    }
+  ],
+  "tags": [
+    { "name": "scans", "description": "Scan submission, status, events, cancellation and published artifacts." },
+    { "name": "comparisons", "description": "Comparison of two published scans." },
+    { "name": "ops", "description": "Liveness and readiness. Unauthenticated." },
+    { "name": "runner", "description": "Runner-internal endpoints (API to runner wake call)." },
+    { "name": "web-ui", "description": "Server-rendered web UI, same origin. Calls the /v1 API with the session cookie." }
+  ],
+  "security": [{ "bearerAuth": [] }, { "sessionCookie": [] }],
+  "paths": {
+    "/v1/scans": {
+      "post": {
+        "operationId": "submitScan",
+        "tags": ["scans"],
+        "summary": "Submit a scan",
+        "description": "Commits the job row, then calls the runner wake endpoint (ADR-008). Honours `Idempotency-Key`. Returns 202 with the scan in its initial state. Not stated in SS00: the status code and body on an idempotent replay (the `Idempotency-Replayed` header is documented on the 202 response); the condition for 409 (SS00 defines no conflict case for this route).",
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "./schemas/scan-request.schema.json#" }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Scan accepted.",
+            "headers": {
+              "Idempotency-Replayed": { "$ref": "#/components/headers/IdempotencyReplayed" }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["scan"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "scan": { "$ref": "./schemas/scan.schema.json#" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "422": { "$ref": "#/components/responses/UnprocessableEntity" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" }
+        }
+      },
+      "get": {
+        "operationId": "listScans",
+        "tags": ["scans"],
+        "summary": "List the principal's scans",
+        "description": "Cursor pagination. Only the `cursor` parameter is defined in SS00 section 6; no page-size parameter is defined. Scans are restricted to the calling principal.",
+        "parameters": [{ "$ref": "#/components/parameters/Cursor" }],
+        "responses": {
+          "200": {
+            "description": "A page of scans.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Matches ScanList in packages/contracts/src/scan.ts. No generated schema file exists for this shape, so it is inlined here.",
+                  "required": ["items", "nextCursor"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": { "$ref": "./schemas/scan.schema.json#" }
+                    },
+                    "nextCursor": { "type": ["string", "null"] }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/scans/{id}": {
+      "get": {
+        "operationId": "getScan",
+        "tags": ["scans"],
+        "summary": "Scan status, progress, budgets, usage, failure and artifact index",
+        "description": "Returns the scan object directly. SS00 section 6 wraps the POST response as `{ scan }` but does not state whether this GET is wrapped; the unwrapped form is used here and is an open question (see the handover).",
+        "parameters": [{ "$ref": "#/components/parameters/ScanId" }],
+        "responses": {
+          "200": {
+            "description": "The scan.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "./schemas/scan.schema.json#" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/v1/scans/{id}/events": {
+      "get": {
+        "operationId": "streamScanEvents",
+        "tags": ["scans"],
+        "summary": "SSE stream of job events",
+        "description": "Server-Sent Events. Each `data:` field is one JSON object conforming to job-event.schema.json. SS00 does not define the SSE `id:` field, reconnection (`Last-Event-ID`) or the stream end condition. Browsers' EventSource cannot send an Authorization header, so the session cookie is the applicable credential there.",
+        "parameters": [{ "$ref": "#/components/parameters/ScanId" }],
+        "responses": {
+          "200": {
+            "description": "Event stream.",
+            "content": {
+              "text/event-stream": {
+                "schema": { "type": "string" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/v1/scans/{id}/cancel": {
+      "post": {
+        "operationId": "cancelScan",
+        "tags": ["scans"],
+        "summary": "Request cancellation",
+        "description": "Sets cancel_requested. A queued scan moves straight to cancelled; a running scan stops at its next checkpoint (SS00 section 3.6). Returns 202. SS00 does not define the condition for 409 (for example a scan that has already finished).",
+        "parameters": [{ "$ref": "#/components/parameters/ScanId" }],
+        "responses": {
+          "202": {
+            "description": "Cancellation requested.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Matches CancelResponse in packages/contracts/src/scan.ts. No generated schema file exists for this shape, so it is inlined here.",
+                  "required": ["id", "status", "cancelRequested"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": { "type": "string", "format": "uuid" },
+                    "status": { "type": "string", "enum": ["queued", "running", "succeeded", "failed", "cancelled"] },
+                    "cancelRequested": { "type": "boolean" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" }
+        }
+      }
+    },
+    "/v1/scans/{id}/artifacts": {
+      "get": {
+        "operationId": "listScanArtifacts",
+        "tags": ["scans"],
+        "summary": "Manifest-derived artifact index",
+        "description": "Array of index entries derived from the manifest. The scan's `artifacts` field is null until publication. SS00 section 6 names an entry field `name`; the generated schema and the zod contract have `path` and no `name`. The generated schema is followed here. The response before publication is not defined in SS00 (409 is listed for that case, unconfirmed).",
+        "parameters": [{ "$ref": "#/components/parameters/ScanId" }],
+        "responses": {
+          "200": {
+            "description": "Artifact index.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "./schemas/scan.schema.json#/properties/artifacts/anyOf/0/items" }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+    "/v1/scans/{id}/artifacts/{path}": {
+      "get": {
+        "operationId": "downloadArtifact",
+        "tags": ["scans"],
+        "summary": "Stream one published artifact",
+        "description": "The path must match an entry in the manifest; it is never resolved from the request as a filesystem path. The `{path}` parameter may contain `/` characters (SS00 section 6 `:path*`). OpenAPI 3.1 cannot express a multi-segment wildcard, so the template is written as a single segment; the value is still multi-segment. `bundle.tar.gz` is the downloadable bundle.",
+        "parameters": [
+          { "$ref": "#/components/parameters/ScanId" },
+          {
+            "name": "path",
+            "in": "path",
+            "required": true,
+            "description": "Published path from the artifact index. May contain `/`.",
+            "schema": { "type": "string", "minLength": 1, "maxLength": 1024 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Artifact bytes.",
+            "content": {
+              "application/octet-stream": {
+                "schema": { "type": "string", "format": "binary" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/v1/scans/{id}/architecture": {
+      "get": {
+        "operationId": "getArchitecture",
+        "tags": ["scans"],
+        "summary": "architecture.json",
+        "description": "Returns the published architecture.json (archreview.architecture/1.0).",
+        "parameters": [{ "$ref": "#/components/parameters/ScanId" }],
+        "responses": {
+          "200": {
+            "description": "architecture.json.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "./schemas/architecture.schema.json#" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+    "/v1/scans/{id}/studio-export": {
+      "get": {
+        "operationId": "getStudioExport",
+        "tags": ["scans"],
+        "summary": "studio-export.json",
+        "description": "Returns studio-export.json. Produced in Stage E (SS00 section 12); the adapter is fixture-backed. The condition for 409 is not defined in SS00.",
+        "parameters": [{ "$ref": "#/components/parameters/ScanId" }],
+        "responses": {
+          "200": {
+            "description": "studio-export.json.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "./schemas/studio-export.schema.json#" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+    "/v1/scans/{id}/viewer/": {
+      "get": {
+        "operationId": "getViewer",
+        "tags": ["scans"],
+        "summary": "Upstream viewer HTML with hooks injected",
+        "description": "The upstream viewer page (dist/viewer.html) with service hooks injected (ADR-003). The page is an HTML document; its scripts are served from the same origin.",
+        "parameters": [{ "$ref": "#/components/parameters/ScanId" }],
+        "responses": {
+          "200": {
+            "description": "Viewer HTML.",
+            "content": {
+              "text/html": {
+                "schema": { "type": "string" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+    "/v1/scans/{id}/viewer-api/api/{rest}": {
+      "get": {
+        "operationId": "getViewerApi",
+        "tags": ["scans"],
+        "summary": "Upstream viewer API shape over the published .omm tree",
+        "description": "Endpoints: classes, class, refs, nodes, node (SS00 section 6). The response shape is the upstream viewer API's, which SS00 does not define in a schema; the schema below is intentionally unconstrained. `{rest}` may contain `/` (SS00 `*`); see the note on the artifact path above.",
+        "parameters": [
+          { "$ref": "#/components/parameters/ScanId" },
+          {
+            "name": "rest",
+            "in": "path",
+            "required": true,
+            "description": "Endpoint name and remaining segments, for example `classes` or `nodes/...`.",
+            "schema": { "type": "string", "minLength": 1, "maxLength": 1024 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Viewer API response (upstream shape, not constrained here).",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+    "/v1/scans/{id}/viewer-api/events": {
+      "get": {
+        "operationId": "getViewerApiEvents",
+        "tags": ["scans"],
+        "summary": "No-op SSE stream for the viewer",
+        "description": "Returns a no-op event stream because published trees never change (SS00 section 6).",
+        "parameters": [{ "$ref": "#/components/parameters/ScanId" }],
+        "responses": {
+          "200": {
+            "description": "No-op event stream.",
+            "content": {
+              "text/event-stream": {
+                "schema": { "type": "string" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/v1/comparisons": {
+      "post": {
+        "operationId": "createComparison",
+        "tags": ["comparisons"],
+        "summary": "Create a comparison of two published scans",
+        "description": "Both scans must be owned by the caller and published (SS00 section 6). SS00 does not state whether a scan that is not published yields 409 or 422; both are listed.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "./schemas/comparison-request.schema.json#" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Comparison record created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["comparison"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "comparison": { "$ref": "./schemas/comparison-record.schema.json#" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "422": { "$ref": "#/components/responses/UnprocessableEntity" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" }
+        }
+      }
+    },
+    "/v1/comparisons/{id}": {
+      "get": {
+        "operationId": "getComparison",
+        "tags": ["comparisons"],
+        "summary": "Comparison result",
+        "description": "SS00 section 6 names this route's response as the comparison result (archreview.comparison/1.0). The comparison record (status, links) has no defined GET response; whether this route also serves the record is not stated in SS00.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Comparison result.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "./schemas/comparison.schema.json#" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "getHealth",
+        "tags": ["ops"],
+        "summary": "Liveness",
+        "description": "Returns 200 whenever the process is up (SS00 section 10). Unauthenticated. The runner's response also includes `activeJobs`.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Process is up.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["status"],
+                  "properties": {
+                    "status": { "type": "string" },
+                    "activeJobs": { "type": "integer", "minimum": 0, "description": "Runner only." }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ready": {
+      "get": {
+        "operationId": "getReady",
+        "tags": ["ops"],
+        "summary": "Readiness",
+        "description": "API: checks the database and the bucket (SS00 section 6). Runner: as above plus `activeJobs`. Unauthenticated. SS00 does not state the status code when not ready; 503 is shown and is an assumption.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Ready.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["status"],
+                  "properties": {
+                    "status": { "type": "string" },
+                    "activeJobs": { "type": "integer", "minimum": 0, "description": "Runner only." }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Not ready (status code assumed, not specified in SS00).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["status"],
+                  "properties": {
+                    "status": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/wake": {
+      "post": {
+        "operationId": "wakeRunner",
+        "tags": ["runner"],
+        "summary": "Wake the runner's claim loop",
+        "description": "Runner endpoint, called by the API (ADR-008). Authenticated by HMAC over the request (the signature scheme, the header carrying it and the time window are not defined in SS00 section 6 or ADR-008; the `security` field is therefore empty and the authentication is described here only). Returns 202 always after authentication; the call is idempotent and only starts the claim loop.",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "./schemas/wake-request.schema.json#" }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted after HMAC authentication.",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/": {
+      "get": {
+        "operationId": "uiHome",
+        "tags": ["web-ui"],
+        "summary": "Web UI home",
+        "security": [{ "sessionCookie": [] }],
+        "responses": {
+          "200": { "$ref": "#/components/responses/Html" }
+        }
+      }
+    },
+    "/login": {
+      "get": {
+        "operationId": "uiLogin",
+        "tags": ["web-ui"],
+        "summary": "Login page",
+        "description": "Unauthenticated. The web UI exchanges an API key once for the session cookie (ADR-009). The form submission route is not defined in SS00 section 6.",
+        "security": [],
+        "responses": {
+          "200": { "$ref": "#/components/responses/Html" }
+        }
+      }
+    },
+    "/scans": {
+      "get": {
+        "operationId": "uiScans",
+        "tags": ["web-ui"],
+        "summary": "Scan list page",
+        "security": [{ "sessionCookie": [] }],
+        "responses": {
+          "200": { "$ref": "#/components/responses/Html" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/scans/{id}": {
+      "get": {
+        "operationId": "uiScan",
+        "tags": ["web-ui"],
+        "summary": "Scan detail page",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ScanId" }],
+        "responses": {
+          "200": { "$ref": "#/components/responses/Html" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/scans/{id}/compare": {
+      "get": {
+        "operationId": "uiCompare",
+        "tags": ["web-ui"],
+        "summary": "Comparison page",
+        "description": "The meaning of `id` on this page (base or head scan) is not defined in SS00 section 6.",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ScanId" }],
+        "responses": {
+          "200": { "$ref": "#/components/responses/Html" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "API key sent as `Authorization: Bearer <key>` (ADR-009)."
+      },
+      "sessionCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "ar_session",
+        "description": "HttpOnly, Secure, SameSite=Strict session cookie issued to the web UI (ADR-009). The Secure attribute is controlled by COOKIE_SECURE in config.ts."
+      }
+    },
+    "parameters": {
+      "ScanId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string", "format": "uuid" }
+      },
+      "IdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": false,
+        "description": "Client-supplied key. SS00 does not define its maximum length or its scope beyond the principal.",
+        "schema": { "type": "string", "minLength": 1 }
+      },
+      "Cursor": {
+        "name": "cursor",
+        "in": "query",
+        "required": false,
+        "description": "Opaque pagination cursor from a previous page's `nextCursor`.",
+        "schema": { "type": "string" }
+      }
+    },
+    "headers": {
+      "IdempotencyReplayed": {
+        "description": "Present when the response replays an earlier scan created with the same Idempotency-Key. The value is assumed to be `true`; SS00 does not define the value.",
+        "schema": { "type": "string" }
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "Missing or invalid credentials.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "./schemas/error.schema.json#" }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Not found, or not owned by the caller. SS00 does not state whether non-owned resources return 404 or 403; 404 is used here and the choice is not decided by this document.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "./schemas/error.schema.json#" }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "Conflict with the current state. SS00 does not define the condition for each route that lists this response; see the operation description.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "./schemas/error.schema.json#" }
+          }
+        }
+      },
+      "UnprocessableEntity": {
+        "description": "Request body is well-formed JSON but fails validation (zod contract).",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "./schemas/error.schema.json#" }
+          }
+        }
+      },
+      "TooManyRequests": {
+        "description": "Per-principal rate limit exceeded (RATE_LIMIT_PER_MINUTE, mutating routes; SS00 section 5.1). No Retry-After header is defined in SS00.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "./schemas/error.schema.json#" }
+          }
+        }
+      },
+      "Html": {
+        "description": "HTML page.",
+        "content": {
+          "text/html": {
+            "schema": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}

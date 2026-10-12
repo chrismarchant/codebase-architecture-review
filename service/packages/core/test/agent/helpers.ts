@@ -94,3 +94,15 @@ export function makeHarness(repoDir: string, budgets: Partial<AnalysisBudgets> =
   const ctl: AgentRunControl = { signal: controller.signal, onProgress: (e) => events.push(e), tools: host };
   return { workspaceRoot, snapshotDir, outDir, inventory, host, budgets: b, events, controller, input, ctl };
 }
+
+let toolUseCounter = 0;
+/** Options argument for canUseTool/hook calls; every read of `toolUseID` yields a fresh id. */
+export function callOptions(): { signal: AbortSignal; toolUseID: string } {
+  return {
+    signal: new AbortController().signal,
+    get toolUseID() {
+      toolUseCounter += 1;
+      return `toolu_${toolUseCounter}`;
+    },
+  };
+}

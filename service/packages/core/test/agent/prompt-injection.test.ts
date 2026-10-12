@@ -11,7 +11,7 @@ import {
   summarizeInventory,
 } from '../../src/agent/index.js';
 import { upstreamSkillPath } from '../../src/upstream/index.js';
-import { AGENT_FIXTURES, HOSTILE, cleanupTmp, makeHarness, makeTmp } from './helpers.js';
+import { AGENT_FIXTURES, HOSTILE, callOptions, cleanupTmp, makeHarness, makeTmp } from './helpers.js';
 
 afterEach(cleanupTmp);
 
@@ -110,9 +110,11 @@ describe('hostile-instructions fixture', () => {
     // cwd is the workspace root, not the repository, so no repository CLAUDE.md/.claude/.mcp.json sits in the project root.
     expect(options.cwd).toBe(h.workspaceRoot);
     expect(options.cwd).not.toBe(h.snapshotDir);
-    for (const forbidden of ['hooks', 'agents', 'settings', 'allowedTools', 'sandbox', 'additionalDirectories', 'pathToClaudeCodeExecutable', 'extraArgs']) {
+    for (const forbidden of ['agents', 'settings', 'allowedTools', 'sandbox', 'additionalDirectories', 'pathToClaudeCodeExecutable', 'extraArgs']) {
       expect(forbidden in options, forbidden).toBe(false);
     }
+    // The only hooks are the service's own PreToolUse policy hooks (repository hooks need settingSources, which is []).
+    expect(Object.keys(options.hooks ?? {})).toEqual(['PreToolUse']);
     // Repository text does not reach the prompts: only the sanitised summary does.
     for (const text of [bundle.systemPrompt, bundle.taskPrompt]) {
       expect(text).not.toContain('attacker.example.invalid');
@@ -128,7 +130,7 @@ describe('hostile-instructions fixture', () => {
       abortController: new AbortController(),
     });
     const can = options.canUseTool!;
-    const o = { signal: new AbortController().signal, toolUseID: 't' } as Parameters<typeof can>[2];
+    const o = callOptions() as Parameters<typeof can>[2];
     expect((await can('Read', { file_path: 'CLAUDE.md' }, o)).behavior).toBe('allow');
     expect((await can('Read', { file_path: '~/.aws/credentials' }, o)).behavior).toBe('deny');
     expect((await can('Read', { file_path: '/etc/passwd' }, o)).behavior).toBe('deny');

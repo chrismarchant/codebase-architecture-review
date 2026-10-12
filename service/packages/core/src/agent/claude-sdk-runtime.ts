@@ -11,6 +11,8 @@ import path from 'node:path';
 import {
   query as sdkQuery,
   type CanUseTool,
+  type HookCallback,
+  type HookCallbackMatcher,
   type McpSdkServerConfigWithInstance,
   type Options,
   type PermissionResult,
@@ -77,16 +79,21 @@ function str(v: unknown): string | undefined {
 }
 
 /**
- * Builds the permission callback. Allowed calls are returned with `updatedInput` carrying the
- * absolute, authorised paths, so the built-in tool reads exactly what was authorised (the SDK
- * resolves relative paths against `cwd`, which is the workspace root and not the snapshot).
+ * Builds the single policy function behind both enforcement points (the PreToolUse hook and
+ * `canUseTool`). Allowed calls are returned with `updatedInput` carrying the absolute,
+ * authorised paths, so the built-in tool reads exactly what was authorised (the SDK resolves
+ * relative paths against `cwd`, which is the workspace root and not the snapshot).
+ *
+ * Decisions are cached per tool-use id: when the hook has already decided (and accounted the
+ * read), `canUseTool` for the same call returns the same decision without accounting twice.
  */
-export function createCanUseTool(
+export function createToolPolicy(
   host: AnalysisToolHost,
   snapshotDir: string,
   hooks: Pick<SdkOptionsDeps, 'onBudget' | 'onToolDecision'> = {},
-): CanUseTool {
+): (toolName: string, input: Record<string, unknown>, toolUseID?: string) => PermissionResult {
   const root = host.authorizeSnapshotPath(snapshotDir);
+  const decided = new Map<string, PermissionResult>();
 
   const decide = (name: string, fn: () => PermissionResult): PermissionResult => {
     try {
@@ -109,7 +116,7 @@ export function createCanUseTool(
     }
   };
 
-  return async (toolName, input) => {
+  const evaluate = (toolName: string, input: Record<string, unknown>): PermissionResult => {
     if (isArchreviewMcpTool(toolName)) return { behavior: 'allow', updatedInput: input };
 
     switch (toolName) {
@@ -156,6 +163,69 @@ export function createCanUseTool(
         return deny(`Tool ${JSON.stringify(toolName.slice(0, 64))} is not available in this environment. Use Read, Glob, Grep and the archreview tools only.`);
     }
   };
+
+  return (toolName, input, toolUseID) => {
+    if (toolUseID) {
+      const prior = decided.get(toolUseID);
+      if (prior) return prior;
+    }
+    const r = evaluate(toolName, input && typeof input === 'object' ? input : {});
+    if (toolUseID) decided.set(toolUseID, r);
+    return r;
+  };
+}
+
+/** Second line of defence: `canUseTool` shares the policy (and decision cache) with the hook. */
+export function createCanUseTool(policy: ReturnType<typeof createToolPolicy>): CanUseTool {
+  return async (toolName, input, options) => policy(toolName, input, options.toolUseID);
+}
+
+/** Built-in tools that are denied unconditionally by the second PreToolUse hook (beyond `disallowedTools`). */
+export const HOOK_DENIED_TOOLS = [
+  ...DISALLOWED_TOOLS,
+  'Skill',
+  'SlashCommand',
+  'ExitPlanMode',
+  'EnterPlanMode',
+  'AskUserQuestion',
+  'TaskOutput',
+  'TaskStop',
+  'ListMcpResources',
+  'ReadMcpResource',
+  'LSP',
+  'Monitor',
+] as const;
+
+/**
+ * PreToolUse hook callback: runs for every call the matchers select, before the permission
+ * flow, so the policy holds even where Claude Code would auto-allow (reads under `cwd`).
+ */
+export function createPolicyHook(policy: ReturnType<typeof createToolPolicy>): HookCallback {
+  return async (input, toolUseID) => {
+    if (input.hook_event_name !== 'PreToolUse') return {};
+    const id = toolUseID ?? input.tool_use_id;
+    const args = input.tool_input && typeof input.tool_input === 'object' ? (input.tool_input as Record<string, unknown>) : {};
+    const r = policy(input.tool_name, args, id);
+    if (r.behavior === 'deny') {
+      return {
+        // A run-ending budget (interrupt) also stops the session.
+        ...(r.interrupt ? { continue: false, stopReason: r.message } : {}),
+        hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: r.message },
+      };
+    }
+    return {
+      hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', ...(r.updatedInput ? { updatedInput: r.updatedInput } : {}) },
+    };
+  };
+}
+
+export function buildPreToolUseHooks(policy: ReturnType<typeof createToolPolicy>): HookCallbackMatcher[] {
+  const hook = createPolicyHook(policy);
+  return [
+    { matcher: 'Read|Glob|Grep', hooks: [hook] },
+    // Every other built-in is denied by the same policy (its default branch), regardless of disallowedTools.
+    { matcher: `^(${HOOK_DENIED_TOOLS.join('|')})$`, hooks: [hook] },
+  ];
 }
 
 // ---------------------------------------------------------------------------
@@ -177,6 +247,10 @@ export function buildSdkOptions(
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
   };
 
+  // One policy, two enforcement points: the PreToolUse hook always runs (Claude Code auto-allows
+  // reads under `cwd` without consulting canUseTool); canUseTool is the second line of defence.
+  const policy = createToolPolicy(ctl.tools, input.snapshotDir, deps);
+
   return {
     cwd: input.workspaceRoot,
     tools: [...BUILTIN_READ_TOOLS],
@@ -186,7 +260,8 @@ export function buildSdkOptions(
     // calls canUseTool, so the snapshot path policy and read budgets would not run at all (and the
     // in-process MCP tools would be denied). 'host' keeps every decision in canUseTool above.
     permissionPrompts: 'host',
-    canUseTool: createCanUseTool(ctl.tools, input.snapshotDir, deps),
+    canUseTool: createCanUseTool(policy),
+    hooks: { PreToolUse: buildPreToolUseHooks(policy) },
     systemPrompt: input.promptBundle.systemPrompt,
     settingSources: [],
     strictMcpConfig: true,

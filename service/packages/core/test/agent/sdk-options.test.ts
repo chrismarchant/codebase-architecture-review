@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { DISALLOWED_TOOLS, buildSdkOptions, createArchreviewMcpServer, type McpToolHooks } from '../../src/agent/index.js';
-import { MINI_APP, cleanupTmp, makeHarness, makeTmp } from './helpers.js';
+import { DISALLOWED_TOOLS, HOOK_DENIED_TOOLS, buildSdkOptions, createArchreviewMcpServer, type McpToolHooks } from '../../src/agent/index.js';
+import { MINI_APP, callOptions, cleanupTmp, makeHarness, makeTmp } from './helpers.js';
 
 afterEach(cleanupTmp);
 
@@ -44,14 +44,14 @@ function build(budgets = {}, deps: Partial<Parameters<typeof buildSdkOptions>[3]
 }
 
 type CanUse = NonNullable<ReturnType<typeof build>['options']['canUseTool']>;
-const callOpts = { signal: new AbortController().signal, toolUseID: 't1' } as Parameters<CanUse>[2];
+const callOpts = callOptions() as Parameters<CanUse>[2];
 
 describe('buildSdkOptions', () => {
   it('sets exactly the options required by ADR-004', () => {
     const { h, server, homeDir, options } = build({ maxTurns: 50, maxBudgetUsd: 1.5 });
     expect(Object.keys(options).sort()).toEqual(
       [
-        'abortController', 'canUseTool', 'cwd', 'disallowedTools', 'env', 'maxBudgetUsd', 'maxTurns', 'mcpServers', 'model',
+        'abortController', 'canUseTool', 'cwd', 'disallowedTools', 'env', 'hooks', 'maxBudgetUsd', 'maxTurns', 'mcpServers', 'model',
         'permissionMode', 'permissionPrompts', 'persistSession', 'plugins', 'settingSources', 'skills', 'strictMcpConfig',
         'systemPrompt', 'tools',
       ].sort(),
@@ -221,5 +221,87 @@ describe('canUseTool', () => {
     await run(options, 'Read', { file_path: 'src/server.ts' });
     expect(decisions).toEqual(['Bash:false', 'Read:false']);
     expect(budgets).toEqual(['maxReadBytesTotal']);
+  });
+});
+
+describe('PreToolUse hooks', () => {
+  type Hook = NonNullable<NonNullable<ReturnType<typeof build>['options']['hooks']>['PreToolUse']>[number]['hooks'][number];
+  const hookInput = (tool_name: string, tool_input: unknown, id = `h${Math.random()}`) =>
+    ({ hook_event_name: 'PreToolUse', tool_name, tool_input, tool_use_id: id, session_id: 's', transcript_path: '', cwd: '/' }) as Parameters<Hook>[0];
+  const sig = { signal: new AbortController().signal };
+  const decision = (r: Awaited<ReturnType<Hook>>) =>
+    (r as { hookSpecificOutput?: { permissionDecision?: string; permissionDecisionReason?: string; updatedInput?: Record<string, unknown> } }).hookSpecificOutput;
+
+  it('registers a PreToolUse hook for Read|Glob|Grep and one for every other built-in tool', () => {
+    const { options } = build();
+    const matchers = options.hooks?.PreToolUse ?? [];
+    expect(matchers.map((m) => m.matcher)).toEqual(['Read|Glob|Grep', `^(${HOOK_DENIED_TOOLS.join('|')})$`]);
+    expect(Object.keys(options.hooks ?? {})).toEqual(['PreToolUse']);
+    const denied = new RegExp(matchers[1]?.matcher as string);
+    for (const t of DISALLOWED_TOOLS) expect(denied.test(t), t).toBe(true);
+    for (const t of ['Read', 'Glob', 'Grep', 'mcp__archreview__omm_write']) expect(denied.test(t), t).toBe(false);
+    expect(matchers.every((m) => m.hooks.length === 1)).toBe(true);
+  });
+
+  const hooks = (o: ReturnType<typeof build>['options']) => (o.hooks?.PreToolUse ?? []).map((m) => m.hooks[0] as Hook);
+
+  it('denies a read outside the snapshot with a reason, and reads inside the workspace but outside the snapshot', async () => {
+    const { h, options } = build();
+    const [readHook] = hooks(options) as [Hook];
+    for (const p of ['/etc/passwd', '../out/.omm/config.yaml', '~/.aws/credentials', path.join(h.workspaceRoot, 'out', 'x')]) {
+      const d = decision(await readHook(hookInput('Read', { file_path: p }), undefined, sig));
+      expect(d?.permissionDecision, p).toBe('deny');
+      expect(d?.permissionDecisionReason).toMatch(/path_/);
+    }
+    expect(decision(await readHook(hookInput('Glob', { pattern: '../**/*' }), undefined, sig))?.permissionDecision).toBe('deny');
+    expect(decision(await readHook(hookInput('Grep', { pattern: 'x', path: '/etc' }), undefined, sig))?.permissionDecision).toBe('deny');
+    expect(h.host.stats().readBytes).toBe(0);
+  });
+
+  it('denies Bash and every other built-in unconditionally', async () => {
+    const { options } = build();
+    const denyHook = hooks(options)[1] as Hook;
+    for (const t of HOOK_DENIED_TOOLS) {
+      const d = decision(await denyHook(hookInput(t, { command: 'id', file_path: 'src/server.ts' }), undefined, sig));
+      expect(d?.permissionDecision, t).toBe('deny');
+    }
+  });
+
+  it('allows an in-snapshot read, rewrites it to the absolute path and accounts the bytes', async () => {
+    const { h, options } = build();
+    const [readHook] = hooks(options) as [Hook];
+    const d = decision(await readHook(hookInput('Read', { file_path: 'src/server.ts', offset: 2 }), undefined, sig));
+    expect(d?.permissionDecision).toBe('allow');
+    expect(d?.updatedInput).toEqual({ file_path: path.join(fs.realpathSync(h.snapshotDir), 'src', 'server.ts'), offset: 2 });
+    expect(h.host.stats()).toMatchObject({ readFiles: 1, readBytes: 831 });
+    const g = decision(await readHook(hookInput('Glob', { pattern: '**/*.ts' }), undefined, sig));
+    expect(g?.updatedInput).toMatchObject({ path: fs.realpathSync(h.snapshotDir), pattern: '**/*.ts' });
+  });
+
+  it('accounts a call once when the hook and canUseTool both see it', async () => {
+    const { h, options } = build();
+    const [readHook] = hooks(options) as [Hook];
+    const id = 'toolu_shared';
+    const d = decision(await readHook(hookInput('Read', { file_path: 'src/server.ts' }, id), id, sig));
+    // canUseTool receives the hook-rewritten (absolute) input for the same tool use.
+    const r = await (options.canUseTool as CanUse)('Read', d?.updatedInput as Record<string, unknown>, { signal: sig.signal, toolUseID: id } as Parameters<CanUse>[2]);
+    expect(r.behavior).toBe('allow');
+    expect(h.host.stats().readBytes).toBe(831);
+  });
+
+  it('enforces budgets in the hook and stops the session when the total is exhausted', async () => {
+    const { options } = build({ maxReadBytesTotal: 10 });
+    const [readHook] = hooks(options) as [Hook];
+    const out = (await readHook(hookInput('Read', { file_path: 'src/server.ts' }), undefined, sig)) as { continue?: boolean; stopReason?: string };
+    expect(out.continue).toBe(false);
+    expect(out.stopReason).toMatch(/maxReadBytesTotal/);
+    const perCall = build({ maxReadBytesPerCall: 100 });
+    const o2 = (await hooks(perCall.options)[0]!(hookInput('Read', { file_path: 'src/server.ts' }), undefined, sig)) as { continue?: boolean };
+    expect(o2.continue).toBeUndefined();
+  });
+
+  it('ignores other hook events', async () => {
+    const { options } = build();
+    expect(await hooks(options)[0]!({ hook_event_name: 'Stop' } as never, undefined, sig)).toEqual({});
   });
 });

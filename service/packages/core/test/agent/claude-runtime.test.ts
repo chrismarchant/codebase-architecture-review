@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Options, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { ClaudeAgentSdkRuntime, type AgentProgressEvent } from '../../src/agent/index.js';
-import { MINI_APP, cleanupTmp, makeHarness, makeTmp } from './helpers.js';
+import { MINI_APP, callOptions, cleanupTmp, makeHarness, makeTmp } from './helpers.js';
 
 afterEach(cleanupTmp);
 
@@ -141,7 +141,7 @@ describe('ClaudeAgentSdkRuntime', () => {
     const { rt } = runtimeWith((c) =>
       (async function* () {
         const can = c.options!.canUseTool!;
-        const r = await can('Read', { file_path: 'src/server.ts' }, { signal: new AbortController().signal, toolUseID: 't' } as never);
+        const r = await can('Read', { file_path: 'src/server.ts' }, callOptions() as never);
         expect(r.behavior).toBe('deny');
         yield assistant('m1');
         yield result('success');
@@ -159,7 +159,7 @@ describe('ClaudeAgentSdkRuntime', () => {
     const { rt } = runtimeWith((c) =>
       (async function* () {
         const can = c.options!.canUseTool!;
-        const o = { signal: new AbortController().signal, toolUseID: 't' } as never;
+        const o = callOptions() as never;
         await can('Read', { file_path: 'src/server.ts' }, o);
         await can('Bash', { command: 'id' }, o);
         await can('mcp__archreview__omm_write', {}, o);

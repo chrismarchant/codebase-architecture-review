@@ -1,2 +1,3 @@
-// Barrel for the crypto module. Owned by the Stage C task that implements it (see docs/briefs/).
-export {};
+export * from './secret-box.js';
+export * from './api-key.js';
+export * from './hmac.js';

@@ -1,0 +1,294 @@
+{
+  "$id": "https://archreview.local/schemas/architecture.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "archreview.architecture/1.0"
+    },
+    "scanId": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "repository": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "commitSha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        }
+      },
+      "required": [
+        "url",
+        "commitSha"
+      ],
+      "additionalProperties": false
+    },
+    "perspectives": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+      }
+    },
+    "components": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^c_[0-9a-f]{12}$"
+          },
+          "perspective": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+          },
+          "path": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,63}(\\/[a-z0-9][a-z0-9-]{0,63})*$"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "perspective",
+              "group",
+              "leaf"
+            ]
+          },
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 512
+            }
+          },
+          "fields": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "enum": [
+                "description",
+                "diagram",
+                "constraint",
+                "concern",
+                "context",
+                "todo",
+                "note"
+              ]
+            },
+            "additionalProperties": {
+              "type": "string"
+            },
+            "required": [
+              "description",
+              "diagram",
+              "constraint",
+              "concern",
+              "context",
+              "todo",
+              "note"
+            ]
+          },
+          "diagram": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "children": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^c_[0-9a-f]{12}$"
+            }
+          },
+          "evidenceIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^e_[0-9a-f]{12}$"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "perspective",
+          "path",
+          "title",
+          "kind",
+          "paths",
+          "fields",
+          "diagram",
+          "children",
+          "evidenceIds"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "relationships": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^r_[0-9a-f]{12}$"
+          },
+          "from": {
+            "type": "string",
+            "pattern": "^c_[0-9a-f]{12}$"
+          },
+          "to": {
+            "type": "string",
+            "pattern": "^c_[0-9a-f]{12}$"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "perspective": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+          },
+          "declaredIn": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,63}(\\/[a-z0-9][a-z0-9-]{0,63})*$"
+          },
+          "evidenceIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^e_[0-9a-f]{12}$"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "from",
+          "to",
+          "label",
+          "perspective",
+          "declaredIn",
+          "evidenceIds"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "entryPoints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "componentId": {
+            "type": "string",
+            "pattern": "^c_[0-9a-f]{12}$"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "http",
+              "cli",
+              "queue",
+              "scheduler",
+              "library",
+              "other"
+            ]
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "evidenceIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^e_[0-9a-f]{12}$"
+            }
+          }
+        },
+        "required": [
+          "componentId",
+          "kind",
+          "evidenceIds"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "trustBoundaries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^tb_[0-9a-f]{12}$"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "componentIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^c_[0-9a-f]{12}$"
+            }
+          },
+          "basis": {
+            "type": "string",
+            "enum": [
+              "observed",
+              "interpretation"
+            ]
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "evidenceIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^e_[0-9a-f]{12}$"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "componentIds",
+          "basis",
+          "evidenceIds"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+    }
+  },
+  "required": [
+    "schema",
+    "scanId",
+    "repository",
+    "perspectives",
+    "components",
+    "relationships",
+    "entryPoints",
+    "trustBoundaries",
+    "generatedAt"
+  ],
+  "additionalProperties": false
+}

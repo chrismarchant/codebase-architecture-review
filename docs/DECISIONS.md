@@ -24,9 +24,9 @@ Each record states the decision, the context that forced it, and the consequence
 
 **Context.** The service needs the upstream store (`writeNodeField`, `listNodes`, ...), validator, differ, the viewer HTML and the `omm-scan` skill text. Copying would fork the `.omm` format.
 
-**Decision.** `service/package.json` declares `"oh-my-mermaid": "file:../"`. The service imports the public API from `oh-my-mermaid` (the built `dist/index.js`) and reads `dist/viewer.html` and `skills/omm-scan/SKILL.md` by resolving the package directory at runtime. The root project is built before the service.
+**Decision.** The service consumes the upstream **build output** through one shim module, `service/packages/core/src/upstream/index.ts`, which re-exports `../../../../../dist/index.js` (types come from the adjacent `dist/index.d.ts`). The upstream root directory is located at runtime from `import.meta.url` (override: `ARCHREVIEW_UPSTREAM_ROOT`) and is the source of `dist/viewer.html` and `skills/omm-scan/SKILL.md`. The root project is built before the service. An npm `file:../` dependency was tried first and rejected: npm 10 fails with `Cannot read properties of null (reading 'edgesOut')` when a workspace links to an ancestor directory.
 
-**Consequences.** The root build is a prerequisite for the service build and for the Docker images. Any upstream API the service needs that is not exported from `src/index.ts` is either added to the export list (small upstream change, recorded in `docs/UPSTREAM-PARITY.md`) or re-implemented in `service/` with a comment pointing at the upstream origin.
+**Consequences.** The root build is a prerequisite for the service build and for the Docker images; `yaml` (upstream's only runtime dependency) must be installed at the root. Any upstream API the service needs that is not exported from `src/index.ts` is either added to the export list (small upstream change, recorded in `docs/UPSTREAM-PARITY.md`) or re-implemented in `service/` with a comment pointing at the upstream origin.
 
 ---
 
@@ -181,3 +181,15 @@ The model is selected by `ANALYSIS_MODEL` (default `claude-sonnet-5-5`); effort 
 **Decision.** Runtime model selection is only ever `ANALYSIS_MODEL` (and the fallback `ANALYSIS_FALLBACK_MODEL`, optional). Docs and code never hard-code a Fable identifier. The default is `claude-sonnet-5-5` because it is the current general-availability Sonnet listed in the Claude API reference consulted on 2026-10-12; operators may change it.
 
 **Consequences.** Cost tables in the runbook are parameterised by model.
+
+---
+
+## ADR-015 The service workspace uses pnpm; the upstream root keeps npm
+
+**Status:** Accepted (Stage B)
+
+**Context.** `npm install` (npm 10.9.4, Node 22.22) crashes with `TypeError: Cannot read properties of null (reading 'edgesOut')` in arborist's `#loadPeerSet` for the `service/` workspace, both inside and outside the repository tree and with every dependency installed individually without error. pnpm 10.28 installs the same workspace cleanly.
+
+**Decision.** `service/` is a pnpm workspace (`pnpm-workspace.yaml`, `packageManager: pnpm@10.28.0`, `workspace:*` links, committed `pnpm-lock.yaml`). The upstream root stays on npm with its original `package-lock.json`, untouched. Dockerfiles install pnpm with `corepack`.
+
+**Consequences.** Two package managers in one repository, separated by directory. Sub-agents must not change `service/pnpm-lock.yaml` or any `package.json`; dependency additions are requested in handovers and applied by the coordinator.

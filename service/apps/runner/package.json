@@ -1,0 +1,21 @@
+{
+  "name": "@archreview/runner",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Analysis runner: claims jobs, retrieves immutable snapshots, runs the headless agent, validates and publishes artifacts",
+  "type": "module",
+  "main": "./dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@archreview/contracts": "workspace:*",
+    "@archreview/core": "workspace:*",
+    "@hono/node-server": "^1.19.0",
+    "hono": "^4.9.0"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.0"
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "$id": "https://archreview.local/schemas/revision-match.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "result": {
+      "type": "string",
+      "enum": [
+        "match",
+        "mismatch",
+        "unknown"
+      ]
+    },
+    "exportSha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "studioSha": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "message": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "result",
+    "exportSha",
+    "studioSha",
+    "message"
+  ],
+  "additionalProperties": false
+}

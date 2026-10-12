@@ -3,3 +3,7 @@ dist/
 .omc/
 .cursor-plugin/
 *.tgz
+service/**/node_modules/
+service/**/dist/
+service/.local/
+.railway/node_modules/

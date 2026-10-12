@@ -1,0 +1,38 @@
+{
+  "name": "@archreview/core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Domain logic shared by the API and the runner: job store, leases and fencing, artifact store, pipeline stages, agent runtime adapters, validators, comparison, Security Studio adapter",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./*": {
+      "types": "./dist/*.d.ts",
+      "default": "./dist/*.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@archreview/contracts": "workspace:*",
+    "@anthropic-ai/claude-agent-sdk": "^0.3.290",
+    "@aws-sdk/client-s3": "^3.900.0",
+    "pg": "^8.16.0",
+    "tar": "^7.4.0",
+    "yaml": "^2.8.3",
+    "zod": "^4.1.0",
+    "@anthropic-ai/sdk": "^0.93.0",
+    "@modelcontextprotocol/sdk": "^1.29.0"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.0",
+    "@types/pg": "^8.15.0",
+    "@types/tar": "^6.1.13"
+  }
+}

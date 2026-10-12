@@ -1,0 +1,363 @@
+{
+  "$id": "https://archreview.local/schemas/comparison.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "archreview.comparison/1.0"
+    },
+    "comparisonId": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "base": {
+      "type": "object",
+      "properties": {
+        "scanId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "commitSha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "manifestSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "scanId",
+        "commitSha",
+        "manifestSha256"
+      ],
+      "additionalProperties": false
+    },
+    "head": {
+      "type": "object",
+      "properties": {
+        "scanId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "commitSha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "manifestSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "scanId",
+        "commitSha",
+        "manifestSha256"
+      ],
+      "additionalProperties": false
+    },
+    "components": {
+      "type": "object",
+      "properties": {
+        "added": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^c_[0-9a-f]{12}$"
+              },
+              "path": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9-]{0,63}(\\/[a-z0-9][a-z0-9-]{0,63})*$"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "path",
+              "title"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "removed": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^c_[0-9a-f]{12}$"
+              },
+              "path": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9-]{0,63}(\\/[a-z0-9][a-z0-9-]{0,63})*$"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "path",
+              "title"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "changed": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^c_[0-9a-f]{12}$"
+              },
+              "path": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9-]{0,63}(\\/[a-z0-9][a-z0-9-]{0,63})*$"
+              },
+              "changedFields": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "description",
+                    "diagram",
+                    "constraint",
+                    "concern",
+                    "context",
+                    "todo",
+                    "note"
+                  ]
+                }
+              },
+              "diagramDiff": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "added_nodes": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "removed_nodes": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "added_edges": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "removed_edges": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "has_changes": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "added_nodes",
+                      "removed_nodes",
+                      "added_edges",
+                      "removed_edges",
+                      "has_changes"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "path",
+              "changedFields",
+              "diagramDiff"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "added",
+        "removed",
+        "changed"
+      ],
+      "additionalProperties": false
+    },
+    "relationships": {
+      "type": "object",
+      "properties": {
+        "added": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^r_[0-9a-f]{12}$"
+              },
+              "from": {
+                "type": "string",
+                "pattern": "^c_[0-9a-f]{12}$"
+              },
+              "to": {
+                "type": "string",
+                "pattern": "^c_[0-9a-f]{12}$"
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "from",
+              "to",
+              "label"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "removed": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^r_[0-9a-f]{12}$"
+              },
+              "from": {
+                "type": "string",
+                "pattern": "^c_[0-9a-f]{12}$"
+              },
+              "to": {
+                "type": "string",
+                "pattern": "^c_[0-9a-f]{12}$"
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "from",
+              "to",
+              "label"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "added",
+        "removed"
+      ],
+      "additionalProperties": false
+    },
+    "coverageDelta": {
+      "type": "object",
+      "properties": {
+        "base": {
+          "type": "object",
+          "properties": {
+            "readFiles": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "complete": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "readFiles",
+            "complete"
+          ],
+          "additionalProperties": false
+        },
+        "head": {
+          "type": "object",
+          "properties": {
+            "readFiles": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "complete": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "readFiles",
+            "complete"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "base",
+        "head"
+      ],
+      "additionalProperties": false
+    },
+    "evidenceDelta": {
+      "type": "object",
+      "properties": {
+        "base": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "head": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "base",
+        "head"
+      ],
+      "additionalProperties": false
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+    }
+  },
+  "required": [
+    "schema",
+    "comparisonId",
+    "base",
+    "head",
+    "components",
+    "relationships",
+    "coverageDelta",
+    "evidenceDelta",
+    "generatedAt"
+  ],
+  "additionalProperties": false
+}

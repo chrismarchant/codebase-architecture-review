@@ -1,0 +1,9 @@
+{
+  "name": "archreview-railway-iac",
+  "private": true,
+  "type": "module",
+  "description": "Dependencies for evaluating .railway/railway.ts with the Railway CLI (railway config plan|apply)",
+  "devDependencies": {
+    "railway": "^3.13.0"
+  }
+}

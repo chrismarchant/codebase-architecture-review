@@ -1,0 +1,13 @@
+.git
+node_modules
+dist
+service/node_modules
+service/**/node_modules
+service/**/dist
+service/.local
+.railway/node_modules
+docs/*.gif
+docs/*.png
+docs/*.jpg
+.omm
+*.tgz
